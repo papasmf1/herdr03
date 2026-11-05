@@ -1,0 +1,5 @@
+.DS_Store
+node_modules/
+# OpenRig가 자리마다 만드는 로컬 파일(팀 정의 rig.yaml만 올린다)
+rig/culture/*
+!rig/culture/rig.yaml

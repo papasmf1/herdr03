@@ -1,0 +1,59 @@
+version: "0.2"
+name: culture
+summary: >
+  서울 문화행사 앱을 조사, 기획, 구현하고 독립적으로 리뷰하는 네 자리 팀.
+
+pods:
+  - id: product
+    label: Product
+    members:
+      - id: lead
+        label: 기획 · 화면 설계 · 작업 분배
+        role: team-lead
+        agent_ref: "path:/usr/local/lib/node_modules/@openrig/cli/daemon/specs/agents/orchestration/orchestrator"
+        profile: default
+        runtime: claude-code
+        model: opus
+        cwd: "."
+        permission_policy: builtin:yolo
+      - id: research
+        label: 자료 조사
+        role: researcher
+        agent_ref: "path:/usr/local/lib/node_modules/@openrig/cli/daemon/specs/agents/research/analyst"
+        profile: default
+        runtime: claude-code
+        model: haiku
+        cwd: "."
+        permission_policy: builtin:yolo
+      - id: build
+        label: 구현
+        role: implementer
+        agent_ref: "path:/usr/local/lib/node_modules/@openrig/cli/daemon/specs/agents/development/implementer"
+        profile: default
+        runtime: claude-code
+        model: sonnet
+        cwd: "."
+        permission_policy: builtin:yolo
+      - id: review
+        label: 코드 리뷰
+        role: reviewer
+        agent_ref: "path:/usr/local/lib/node_modules/@openrig/cli/daemon/specs/agents/review/independent-reviewer"
+        profile: default
+        runtime: codex
+        cwd: "."
+        permission_policy: builtin:yolo
+    edges:
+      - kind: delegates_to
+        from: lead
+        to: research
+      - kind: delegates_to
+        from: lead
+        to: build
+      - kind: delegates_to
+        from: lead
+        to: review
+      - kind: can_observe
+        from: review
+        to: build
+
+edges: []

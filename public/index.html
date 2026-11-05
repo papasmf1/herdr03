@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>서울 문화행사 찾기</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <h1>서울 문화행사 찾기</h1>
+    <p class="source">출처: 서울특별시 서울문화포털 · 서울 열린데이터광장 문화행사 정보(2026-10-31)</p>
+    <form id="filters" class="filters" onsubmit="return false">
+      <label>구 <select id="gu" disabled><option value="">전체</option></select></label>
+      <label>이 날짜에 열리는 행사 <input type="date" id="date" disabled></label>
+      <button type="button" id="today" disabled>오늘</button>
+      <label class="check"><input type="checkbox" id="free" disabled> 무료만 보기</label>
+      <button type="button" id="reset" disabled>초기화</button>
+    </form>
+    <p id="count" aria-live="polite">행사를 불러오는 중…</p>
+    <div id="empty" class="message" hidden>
+      <p>조건에 맞는 행사가 없습니다.</p>
+      <button type="button" id="empty-reset">필터 초기화</button>
+    </div>
+    <div id="error" class="message" role="alert" hidden>
+      <p>행사 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</p>
+      <button type="button" id="retry">다시 시도</button>
+    </div>
+    <ul id="list"></ul>
+  </main>
+  <script type="module">
+    import { filterEvents, guCounts, isFiltered, isFree, linkOf, periodText, feeText, guOf, sortEvents, fallbackName } from '/events.js';
+
+    const $ = (id) => document.getElementById(id);
+    const guEl = $('gu'), dateEl = $('date'), freeEl = $('free');
+    const el = (tag, className, text) => {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    };
+
+    // 사진을 못 불러올 때는 그 카드만 분류에 맞는 대체 그림(public/fallback)으로 바꾼다.
+    function fallbackImg(row) {
+      const img = el('img', 'thumb');
+      img.alt = '';
+      img.src = `fallback/${fallbackName(row)}.jpg`;
+      return img;
+    }
+
+    function thumb(row) {
+      if (!row.MAIN_IMG) return fallbackImg(row);
+      const img = el('img', 'thumb');
+      img.alt = '';
+      img.src = row.MAIN_IMG;
+      let timer;
+      const swap = () => {
+        clearTimeout(timer);
+        if (img.complete && img.naturalWidth) return;
+        if (img.isConnected) img.replaceWith(fallbackImg(row));
+      };
+      img.addEventListener('load', () => clearTimeout(timer), { once: true });
+      img.addEventListener('error', swap, { once: true });
+      timer = setTimeout(swap, 4000); // 사진 서버가 응답하지 않으면 error가 한참 뒤에 온다
+      return img;
+    }
+
+    function card(row) {
+      const free = isFree(row);
+      const body = el('div', 'body');
+      const badges = el('div', 'badges');
+      badges.append(el('span', `badge ${free ? 'free' : 'paid'}`, free ? '무료' : '유료'), el('span', 'cat', row.CODENAME || ''));
+      const h2 = el('h2');
+      const href = linkOf(row);
+      if (href) {
+        const a = el('a', '', row.TITLE);
+        a.href = href; a.target = '_blank'; a.rel = 'noopener noreferrer';
+        h2.append(a);
+      } else h2.textContent = row.TITLE;
+      body.append(badges, h2, el('p', 'meta', periodText(row)),
+        el('p', 'meta', [row.PLACE, guOf(row)].filter(Boolean).join(' · ')), el('p', 'meta', feeText(row)));
+      if (row.USE_TRGT) body.append(el('p', 'target', row.USE_TRGT));
+      const article = el('article', 'card');
+      article.append(thumb(row), body);
+      const li = el('li');
+      li.append(article);
+      return li;
+    }
+
+    let rows = [];
+    function render() {
+      const cond = { gu: guEl.value, date: dateEl.value, freeOnly: freeEl.checked };
+      const shown = filterEvents(rows, cond);
+      $('count').textContent = isFiltered(cond) ? `행사 ${shown.length}개 (전체 ${rows.length}개 중)` : `행사 ${shown.length}개`;
+      $('list').replaceChildren(...shown.map(card));
+      $('empty').hidden = shown.length > 0;
+    }
+    const localToday = () => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    function reset() {
+      guEl.value = ''; dateEl.value = ''; freeEl.checked = false;
+      render();
+      guEl.focus();
+    }
+
+    let wired = false;
+    async function init() {
+      $('error').hidden = true;
+      $('count').textContent = '행사를 불러오는 중…';
+      try {
+        const res = await fetch('/api/events');
+        if (!res.ok) throw new Error(res.status);
+        rows = sortEvents(await res.json());
+      } catch {
+        $('count').textContent = '';
+        $('error').hidden = false;
+        $('retry').focus();
+        return;
+      }
+      guEl.replaceChildren(new Option(`전체 (${rows.length})`, ''));
+      for (const { gu, count } of guCounts(rows)) guEl.append(new Option(`${gu} (${count})`, gu));
+      for (const c of [guEl, dateEl, freeEl, $('today'), $('reset')]) c.disabled = false;
+      if (!wired) {
+        wired = true;
+        for (const c of [guEl, dateEl, freeEl]) c.addEventListener('input', render);
+        $('today').addEventListener('click', () => { dateEl.value = localToday(); render(); });
+        $('reset').addEventListener('click', reset);
+        $('empty-reset').addEventListener('click', reset);
+        $('retry').addEventListener('click', init);
+      }
+      render();
+    }
+    init();
+  </script>
+</body>
+</html>
